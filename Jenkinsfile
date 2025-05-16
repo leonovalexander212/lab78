@@ -1,10 +1,8 @@
 pipeline {
     agent {
         docker {
-            // Используем образ с Ubuntu и предустановленными зависимостями
             image 'ubuntu:22.04'
             args '--privileged -v /var/run/docker.sock:/var/run/docker.sock -v $WORKSPACE:/workspace'
-            registryUrl 'https://registry.hub.docker.com'
             reuseNode true
         }
     }
@@ -14,10 +12,23 @@ pipeline {
     }
 
     stages {
-        stage('Установка зависимостей') {
+        stage('Установка Docker и зависимостей') {
             steps {
                 sh '''
+                    # Установка Docker CLI
                     apt-get update && apt-get install -y \
+                    ca-certificates \
+                    curl \
+                    gnupg \
+                    lsb-release
+
+                    mkdir -p /etc/apt/keyrings
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+                    apt-get update && apt-get install -y docker-ce-cli
+
+                    # Установка остальных зависимостей
+                    apt-get install -y \
                     qemu-system-arm \
                     robotframework \
                     python3-locust \
@@ -37,7 +48,7 @@ pipeline {
                         -nographic \
                         -monitor telnet::5555,server,nowait \
                         -serial mon:stdio &
-                    sleep 30  # Ожидание инициализации
+                    sleep 30
                 '''
             }
         }
@@ -87,7 +98,7 @@ pipeline {
 
     post {
         always {
-            sh 'pkill qemu-system-arm'  // Остановка QEMU
+            sh 'pkill qemu-system-arm || true'
         }
     }
 }
