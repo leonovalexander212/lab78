@@ -1,104 +1,12 @@
 pipeline {
-    agent {
-        docker {
-            image 'ubuntu:22.04'
-            args '--privileged -v /var/run/docker.sock:/var/run/docker.sock -v $WORKSPACE:/workspace'
-            reuseNode true
-        }
-    }
-
-    environment {
-        DEBIAN_FRONTEND = 'noninteractive'
-    }
+    agent any
 
     stages {
-        stage('Установка Docker и зависимостей') {
+        stage('Запуск теста') {
             steps {
-                sh '''
-                    # Установка Docker CLI
-                    apt-get update && apt-get install -y \
-                    ca-certificates \
-                    curl \
-                    gnupg \
-                    lsb-release
-
-                    mkdir -p /etc/apt/keyrings
-                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-                    apt-get update && apt-get install -y docker-ce-cli
-
-                    # Установка остальных зависимостей
-                    apt-get install -y \
-                    qemu-system-arm \
-                    robotframework \
-                    python3-locust \
-                    linux-tools-common \
-                    nmon \
-                    && rm -rf /var/lib/apt/lists/*
-                '''
+                sh 'echo "Привет от Jenkins!"'
+                sh 'robot --outputdir reports/ tests/test.robot'
             }
-        }
-
-        stage('Запуск QEMU') {
-            steps {
-                sh '''
-                    qemu-system-arm \
-                        -M romulus-bmc \
-                        -drive file=/workspace/openbmc-image,format=raw \
-                        -nographic \
-                        -monitor telnet::5555,server,nowait \
-                        -serial mon:stdio &
-                    sleep 30
-                '''
-            }
-        }
-
-        stage('Автотесты') {
-            steps {
-                sh 'robot --outputdir /workspace/reports/autotests /workspace/tests/autotests.robot'
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'reports/autotests/**/*'
-                }
-            }
-        }
-
-        stage('WebUI тесты') {
-            steps {
-                sh 'robot --outputdir /workspace/reports/webtests /workspace/tests/webtests.robot'
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'reports/webtests/**/*'
-                }
-            }
-        }
-
-        stage('Нагрузочное тестирование') {
-            steps {
-                sh 'locust -f /workspace/tests/loadtest.py --headless -u 100 -r 10 --run-time 1m --csv=/workspace/loadtest'
-                archiveArtifacts artifacts: 'loadtest_stats.csv'
-            }
-        }
-
-        stage('Профилирование') {
-            steps {
-                sh 'perf stat -e cycles,instructions,cache-misses -o /workspace/perf_report.txt qemu-system-arm ...'
-                sh 'vmstat 1 60 > /workspace/vmstat.log'
-                sh 'nmon -s1 -c 60 -f -T -F /workspace/nmon_report.nmon'
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'perf_report.txt, vmstat.log, *.nmon'
-                }
-            }
-        }
-    }
-
-    post {
-        always {
-            sh 'pkill qemu-system-arm || true'
         }
     }
 }
